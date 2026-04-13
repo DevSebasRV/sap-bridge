@@ -111,6 +111,7 @@ router.post('/', async (req, res) => {
   try {
     // 1. Buscar cliente por email
     let cardCode = null;
+    let step     = 'buscar cliente';
 
     if (cm.email) {
       const existing = await findCustomerByEmail(cm.email);
@@ -122,10 +123,12 @@ router.post('/', async (req, res) => {
 
     // 2. Si no existe, crear cliente
     if (!cardCode) {
+      step     = 'crear cliente';
       cardCode = await createCustomer(cm);
     }
 
     // 3. Crear Oferta de Venta
+    step = 'crear cotizacion';
     const quotation = await createQuotation(cardCode, cm);
 
     return res.status(201).json({
@@ -141,10 +144,10 @@ router.post('/', async (req, res) => {
 
   } catch (err) {
     const sapError = err.response?.data?.error?.message?.value || err.message;
-    console.error('[cmQuotes] Error:', sapError);
+    console.error(`[cmQuotes] Error en paso "${step}":`, err.response?.data || err.message);
     return res.status(500).json({
       success: false,
-      message: sapError,
+      message: `Error en paso "${step}": ${sapError}`,
       data:    [],
     });
   }
