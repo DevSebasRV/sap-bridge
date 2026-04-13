@@ -108,10 +108,10 @@ router.post('/', async (req, res) => {
     });
   }
 
+  let step     = 'buscar cliente';
+  let cardCode = null;
+
   try {
-    // 1. Buscar cliente por email
-    let cardCode = null;
-    let step     = 'buscar cliente';
 
     if (cm.email) {
       const existing = await findCustomerByEmail(cm.email);
