@@ -23,6 +23,13 @@ async function findCustomerByEmail(email) {
 // Crear cliente en SAP si no existe
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Solo dígitos, exactamente 10 — si no cumple devuelve null
+function sanitizePhone(raw) {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D/g, '');
+  return digits.length === 10 ? digits : null;
+}
+
 async function createCustomer(cm) {
   // CardCode: "CM-" + primeros 8 chars del customerId de ClearMechanic
   const cardCode = 'CM-' + (cm.customerId || Date.now().toString()).substring(0, 8).toUpperCase();
@@ -32,15 +39,16 @@ async function createCustomer(cm) {
   const rfcField = (cm.orderCustomizableFields || []).find(
     f => f.name?.toLowerCase().includes('rfc')
   );
-  const rfc = cm.rfc || rfcField?.value || 'XAXX010101000';
+  const rfc   = cm.rfc || rfcField?.value || 'XAXX010101000';
+  const phone = sanitizePhone(cm.mobile || cm.phoneNumber);
 
   const body = {
     CardCode:     cardCode,
     CardName:     cardName,
     CardType:     'cCustomer',
-    EmailAddress: cm.email        || '',
-    Phone1:       cm.mobile       || cm.phoneNumber || '',
+    EmailAddress: cm.email || '',
     FederalTaxID: rfc,
+    ...(phone && { Phone1: phone }),
   };
 
   await sapPost('/BusinessPartners', body);
