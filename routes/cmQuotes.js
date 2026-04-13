@@ -43,18 +43,14 @@ async function createCustomer(cm) {
   const phone = sanitizePhone(cm.mobile || cm.phoneNumber);
 
   const body = {
-    CardCode:     cardCode,
-    CardName:     cardName,
-    CardType:     'cCustomer',
-    EmailAddress: cm.email || '',
-    FederalTaxID: rfc,
+    CardCode:                cardCode,
+    CardName:                cardName,
+    CardType:                'cCustomer',
+    EmailAddress:            cm.email || '',
+    FederalTaxID:            rfc,
+    U_RegimenFiscalReceptor: '616',
+    U_CVM_REGFISCAL:         '616',
     ...(phone && { Cellular: phone }),
-    BPFiscalRegistrys: [
-      {
-        TaxRegimenCode: '616',
-        CardCode:       cardCode,
-      }
-    ],
   };
 
   await sapPost('/BusinessPartners', body);
