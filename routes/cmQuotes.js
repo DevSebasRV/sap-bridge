@@ -62,10 +62,13 @@ async function createCustomer(cm) {
 // Construir líneas de la Oferta de Venta (texto libre, sin ItemCode)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DEFAULT_ITEM_CODE = process.env.SAP_DEFAULT_ITEM || '.0114';
+
 function buildLines(items = []) {
   return items
     .filter(i => i.itemName)
     .map(i => ({
+      ItemCode:        i.itemId || DEFAULT_ITEM_CODE,
       ItemDescription: i.itemName,
       Quantity:        i.quantity  || 1,
       UnitPrice:       i.unitPrice || 0,
@@ -89,7 +92,7 @@ async function createQuotation(cardCode, cm) {
     DocumentLines: buildLines(cm.items),
   };
 
-  return await sapPost('/SalesQuotations', body);
+  return await sapPost('/Quotations', body);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
