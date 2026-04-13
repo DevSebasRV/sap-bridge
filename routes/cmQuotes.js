@@ -85,13 +85,12 @@ async function createQuotation(cardCode, cm) {
     .join(' - ');
 
   const body = {
-    CardCode:                cardCode,
-    DocDate:                 cm.date || new Date().toISOString().split('T')[0],
-    Comments:                `Orden CM #${cm.orderNumber}${vehicleInfo ? ' | ' + vehicleInfo : ''}`,
-    U_CM_OrderId:            String(cm.orderNumber || ''),
-    U_RegimenFiscalReceptor: '616',
-    U_CVM_REGFISCAL:         '616',
-    DocumentLines:           buildLines(cm.items),
+    CardCode:        cardCode,
+    DocDate:         cm.date || new Date().toISOString().split('T')[0],
+    Comments:        `Orden CM #${cm.orderNumber}${vehicleInfo ? ' | ' + vehicleInfo : ''}`,
+    U_CM_OrderId:    String(cm.orderNumber || ''),
+    U_Regimen_Fiscal_: '616',
+    DocumentLines:   buildLines(cm.items),
   };
 
   return await sapPost('/Quotations', body);
