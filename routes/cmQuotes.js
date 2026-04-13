@@ -43,11 +43,12 @@ async function createCustomer(cm) {
   const phone = sanitizePhone(cm.mobile || cm.phoneNumber);
 
   const body = {
-    CardCode:     cardCode,
-    CardName:     cardName,
-    CardType:     'cCustomer',
-    EmailAddress: cm.email || '',
-    FederalTaxID: rfc,
+    CardCode:          cardCode,
+    CardName:          cardName,
+    CardType:          'cCustomer',
+    EmailAddress:      cm.email || '',
+    FederalTaxID:      rfc,
+    U_TaxRegimenCode:  '616',
     ...(phone && { Cellular: phone }),
   };
 
