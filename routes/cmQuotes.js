@@ -48,7 +48,7 @@ async function createCustomer(cm) {
     CardType:     'cCustomer',
     EmailAddress: cm.email || '',
     FederalTaxID: rfc,
-    ...(phone && { Phone1: phone }),
+    ...(phone && { Cellular: phone }),
   };
 
   await sapPost('/BusinessPartners', body);
