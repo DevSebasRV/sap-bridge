@@ -85,12 +85,11 @@ async function createQuotation(cardCode, cm) {
     .join(' - ');
 
   const body = {
-    CardCode:        cardCode,
-    DocDate:         cm.date || new Date().toISOString().split('T')[0],
-    Comments:        `Orden CM #${cm.orderNumber}${vehicleInfo ? ' | ' + vehicleInfo : ''}`,
-    U_CM_OrderId:    String(cm.orderNumber || ''),
-    U_Regimen_Fiscal_: '616',
-    DocumentLines:   buildLines(cm.items),
+    CardCode:      cardCode,
+    DocDate:       cm.date || new Date().toISOString().split('T')[0],
+    Comments:      `Orden CM #${cm.orderNumber}${vehicleInfo ? ' | ' + vehicleInfo : ''}`,
+    U_CM_OrderId:  String(cm.orderNumber || ''),
+    DocumentLines: buildLines(cm.items),
   };
 
   return await sapPost('/Quotations', body);
@@ -117,7 +116,14 @@ router.post('/', async (req, res) => {
 
   try {
 
-    if (cm.email) {
+    // 1. Si viene cardCode en el payload, usarlo directo
+    if (cm.cardCode) {
+      cardCode = cm.cardCode;
+      console.log(`[cmQuotes] Usando CardCode del payload: ${cardCode}`);
+    }
+
+    // 2. Buscar cliente por email
+    if (!cardCode && cm.email) {
       const existing = await findCustomerByEmail(cm.email);
       if (existing) {
         cardCode = existing.CardCode;
@@ -125,7 +131,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 2. Si no existe, crear cliente
+    // 3. Si no existe, crear cliente
     if (!cardCode) {
       step     = 'crear cliente';
       cardCode = await createCustomer(cm);
