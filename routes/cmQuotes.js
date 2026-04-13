@@ -28,12 +28,19 @@ async function createCustomer(cm) {
   const cardCode = 'CM-' + (cm.customerId || Date.now().toString()).substring(0, 8).toUpperCase();
   const cardName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim() || 'Sin Nombre';
 
+  // RFC: 1) campo directo, 2) campos personalizables, 3) genérico Público en General
+  const rfcField = (cm.orderCustomizableFields || []).find(
+    f => f.name?.toLowerCase().includes('rfc')
+  );
+  const rfc = cm.rfc || rfcField?.value || 'XAXX010101000';
+
   const body = {
     CardCode:     cardCode,
     CardName:     cardName,
     CardType:     'cCustomer',
     EmailAddress: cm.email        || '',
     Phone1:       cm.mobile       || cm.phoneNumber || '',
+    FederalTaxID: rfc,
   };
 
   await sapPost('/BusinessPartners', body);
