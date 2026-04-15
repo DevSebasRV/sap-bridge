@@ -3,6 +3,7 @@ const express = require('express');
 const axios   = require('axios');
 
 const { getSession, cachedSession, agent, SAP_CONFIG } = require('./lib/sapClient');
+const setupSwagger = require('./swagger');
 
 const app = express();
 app.use(express.json());
@@ -47,5 +48,7 @@ app.use('/cm-quotes', require('./routes/cmQuotes'));
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'sap-bridge' }));
+
+setupSwagger(app);
 
 app.listen(3000, '127.0.0.1', () => console.log('SAP Bridge corriendo en puerto 3000'));
