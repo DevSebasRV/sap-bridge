@@ -9,10 +9,20 @@ const app = express();
 app.use(express.json());
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Proxy genérico → SAP Service Layer
+// Swagger — debe registrarse ANTES del proxy /s-layer
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.use('/s-layer', async (req, res) => {
+setupSwagger(app);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proxy genérico → SAP Service Layer
+// Excluye /s-layer/api-docs para que no lo intercepte
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.use('/s-layer', async (req, res, next) => {
+  // Si es la ruta de docs, pasar al siguiente middleware
+  if (req.path.startsWith('/api-docs')) return next();
+
   try {
     const session = await getSession();
     const url     = SAP_CONFIG.url + req.url;
@@ -48,7 +58,5 @@ app.use('/cm-quotes', require('./routes/cmQuotes'));
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'sap-bridge' }));
-
-setupSwagger(app);
 
 app.listen(3000, '127.0.0.1', () => console.log('SAP Bridge corriendo en puerto 3000'));
