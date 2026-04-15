@@ -315,8 +315,14 @@ module.exports = (app) => {
   const path = '/s-layer/api-docs';
   app.use(path, swaggerUi.serve, swaggerUi.setup(spec, {
     customSiteTitle: 'SAP Bridge API',
-    customCss:       '.topbar { display: none }',
-    swaggerOptions:  { defaultModelsExpandDepth: -1 },
+    customCss: `
+      body { background: #fafafa; }
+      .swagger-ui .topbar { display: none }
+      .swagger-ui { font-family: sans-serif; }
+      .swagger-ui .info .title { color: #3b4151; }
+      .swagger-ui .scheme-container { background: #fff; box-shadow: 0 1px 2px 0 rgba(0,0,0,.15); padding: 10px 0; }
+    `,
+    swaggerOptions: { defaultModelsExpandDepth: -1 },
   }));
   console.log(`[SAP Bridge] Swagger disponible en ${path}`);
 };
