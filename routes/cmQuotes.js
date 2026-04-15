@@ -120,7 +120,6 @@ async function createItem(item) {
     SalesItem:      'tYES',
     PurchaseItem:   'tYES',
     ItemsGroupCode: 125,
-    TaxCodeAR:      'I1',
   };
 
   await sapPost('/Items', body);
