@@ -6,26 +6,44 @@ const { sapGet, sapPost } = require('../lib/sapClient');
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Solo dígitos, exactamente 10 — si no cumple devuelve null
 function sanitizePhone(raw) {
   if (!raw) return null;
   const digits = String(raw).replace(/\D/g, '');
   return digits.length === 10 ? digits : null;
 }
 
-// Devuelve el Régimen Fiscal correcto:
-// 1) Lo que viene en cm.regimen
-// 2) Si RFC es XAXX010101000 → 616 (Público en General)
-// 3) Default → 601 (General de Ley Personas Morales)
-function resolveRegimen(cm) {
-  if (cm.regimen) return String(cm.regimen);
-  const rfc = (cm.rfc || '').toUpperCase().trim();
-  if (rfc === 'XAXX010101000') return '616';
-  return '601';
+// Obtiene RFC desde el payload directo o desde orderCustomizableFields
+function extractRFC(cm) {
+  if (cm.rfc) return cm.rfc.trim();
+  const field = (cm.orderCustomizableFields || []).find(
+    f => f.name?.toLowerCase().includes('rfc')
+  );
+  return field?.value?.trim() || null;
+}
+
+// Obtiene Régimen Fiscal desde el payload directo o desde orderCustomizableFields
+function extractRegimen(cm) {
+  if (cm.regimen) return String(cm.regimen).trim();
+  const field = (cm.orderCustomizableFields || []).find(
+    f => f.name?.toLowerCase().includes('regimen')
+  );
+  return field?.value ? String(field.value).trim() : null;
+}
+
+// Valida que los datos mínimos para crear un cliente estén presentes
+// Devuelve array de campos faltantes
+function missingCreateFields(cm) {
+  const missing = [];
+  if (!cm.firstName && !cm.lastName)        missing.push('firstName o lastName');
+  if (!extractRFC(cm))                       missing.push('rfc');
+  if (!extractRegimen(cm))                   missing.push('regimen');
+  if (!sanitizePhone(cm.mobile || cm.phoneNumber) && !cm.email)
+                                             missing.push('mobile (10 dígitos) o email');
+  return missing;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Búsqueda de cliente — primero por RFC, luego por móvil
+// Búsqueda de cliente — por RFC, luego por móvil
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function findCustomerByRFC(rfc) {
@@ -62,26 +80,28 @@ async function findCustomerByMobile(mobile) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function createCustomer(cm) {
-  const cardCode = 'CM-' + (cm.customerId || Date.now().toString()).substring(0, 8).toUpperCase();
-  const cardName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim() || 'Sin Nombre';
-  const rfc      = cm.rfc || 'XAXX010101000';
-  const regimen  = resolveRegimen(cm);
+  const rfc      = extractRFC(cm);
+  const regimen  = extractRegimen(cm);
+  const cardName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim();
   const phone    = sanitizePhone(cm.mobile || cm.phoneNumber);
+
+  // Generar CardCode único basado en RFC
+  const cardCode = 'CM-' + rfc.replace(/[^A-Z0-9]/gi, '').substring(0, 10).toUpperCase();
 
   const body = {
     CardCode:                cardCode,
     CardName:                cardName,
     CardType:                'cCustomer',
-    EmailAddress:            cm.email        || '',
     FederalTaxID:            rfc,
     U_CVM_REGFISCAL:         regimen,
     U_RegimenFiscalReceptor: regimen,
-    ...(phone && { Cellular: phone }),
+    ...(cm.email && { EmailAddress: cm.email }),
+    ...(phone    && { Cellular: phone }),
   };
 
   await sapPost('/BusinessPartners', body);
-  console.log(`[cmQuotes] Cliente creado: ${cardCode} - ${cardName} (RFC: ${rfc}, Régimen: ${regimen})`);
-  return { cardCode, cardName, created: true };
+  console.log(`[cmQuotes] Cliente creado: ${cardCode} - ${cardName}`);
+  return { cardCode, cardName };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,12 +148,22 @@ router.post('/', async (req, res) => {
   const cm   = req.body;
   const logs = [];
 
+  // Validación mínima
   if (!cm.orderNumber) {
     return res.status(400).json({
       success: false,
       message: 'El campo orderNumber es requerido.',
-      data:    [],
       logs:    [],
+      data:    [],
+    });
+  }
+
+  if (!cm.items || cm.items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Se requiere al menos un item en el campo items.',
+      logs:    [],
+      data:    [],
     });
   }
 
@@ -146,42 +176,66 @@ router.post('/', async (req, res) => {
     // 1. Si viene cardCode en el payload, usarlo directo
     if (cm.cardCode) {
       cardCode = cm.cardCode;
-      logs.push(`CardCode recibido en payload: ${cardCode}`);
+      logs.push(`CardCode recibido en payload: ${cardCode} — se omite búsqueda.`);
     }
 
     // 2. Buscar por RFC
-    if (!cardCode && cm.rfc) {
-      const found = await findCustomerByRFC(cm.rfc);
-      if (found) {
-        cardCode     = found.CardCode;
-        customerName = found.CardName;
-        logs.push(`Cliente encontrado por RFC (${cm.rfc}): ${cardCode} - ${customerName}`);
+    if (!cardCode) {
+      const rfc = extractRFC(cm);
+      if (rfc) {
+        const found = await findCustomerByRFC(rfc);
+        if (found) {
+          cardCode     = found.CardCode;
+          customerName = found.CardName;
+          logs.push(`Cliente encontrado por RFC (${rfc}): ${cardCode} - ${customerName}`);
+        } else {
+          logs.push(`No se encontró cliente con RFC: ${rfc}`);
+        }
+      } else {
+        logs.push('No se envió RFC — se omite búsqueda por RFC.');
       }
     }
 
     // 3. Buscar por móvil
-    if (!cardCode && (cm.mobile || cm.phoneNumber)) {
-      const found = await findCustomerByMobile(cm.mobile || cm.phoneNumber);
-      if (found) {
-        cardCode     = found.CardCode;
-        customerName = found.CardName;
-        logs.push(`Cliente encontrado por móvil: ${cardCode} - ${customerName}`);
+    if (!cardCode) {
+      const mobile = cm.mobile || cm.phoneNumber;
+      if (mobile) {
+        const found = await findCustomerByMobile(mobile);
+        if (found) {
+          cardCode     = found.CardCode;
+          customerName = found.CardName;
+          logs.push(`Cliente encontrado por móvil (${mobile}): ${cardCode} - ${customerName}`);
+        } else {
+          logs.push(`No se encontró cliente con móvil: ${mobile}`);
+        }
+      } else {
+        logs.push('No se envió móvil — se omite búsqueda por móvil.');
       }
     }
 
-    // 4. Crear cliente si no existe
+    // 4. Si no se encontró, intentar crear — validar campos primero
     if (!cardCode) {
+      const missing = missingCreateFields(cm);
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `No se encontró el cliente y faltan datos para crearlo: ${missing.join(', ')}.`,
+          logs,
+          data:    [],
+        });
+      }
+
       step = 'crear cliente';
       const result = await createCustomer(cm);
       cardCode     = result.cardCode;
-      customerName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim();
-      logs.push(`Cliente nuevo creado en SAP: ${cardCode} - ${customerName} (RFC: ${cm.rfc || 'XAXX010101000'}, Régimen: ${resolveRegimen(cm)})`);
+      customerName = result.cardName;
+      logs.push(`Cliente nuevo creado en SAP: ${cardCode} - ${customerName} (RFC: ${extractRFC(cm)}, Régimen: ${extractRegimen(cm)})`);
     }
 
     // 5. Crear Oferta de Venta
     step = 'crear cotizacion';
     const quotation = await createQuotation(cardCode, cm);
-    logs.push(`Oferta de Venta creada: DocNum ${quotation.DocNum} para cliente ${cardCode}`);
+    logs.push(`Oferta de Venta creada: DocNum ${quotation.DocNum} — Cliente: ${cardCode}`);
 
     return res.status(201).json({
       success: true,
@@ -204,7 +258,7 @@ router.post('/', async (req, res) => {
       success: false,
       message: `Error en paso "${step}": ${sapError}`,
       logs,
-      data: [],
+      data:    [],
     });
   }
 });
