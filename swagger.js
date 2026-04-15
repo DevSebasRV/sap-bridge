@@ -314,6 +314,7 @@ const spec = {
 module.exports = (app) => {
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(spec, {
     customSiteTitle: 'SAP Bridge API',
+    customCss:       '.topbar { display: none }',
     swaggerOptions:  { defaultModelsExpandDepth: -1 },
   }));
   console.log('[SAP Bridge] Swagger disponible en /api-docs');
