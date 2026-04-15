@@ -113,14 +113,14 @@ async function itemExists(itemCode) {
 
 async function createItem(item) {
   const body = {
-    ItemCode:    item.itemId,
-    ItemName:    item.itemName,
-    ItemType:    'iItems',
-    InvntItem:   'tYES',
-    SellItem:    'tYES',
-    PrchseItem:  'tYES',
-    ItmsGrpCod:  125,
-    TaxCodeAR:   'I1',
+    ItemCode:      item.itemId,
+    ItemName:      item.itemName,
+    ItemType:      'itItems',
+    InventoryItem: 'tYES',
+    SalesItem:     'tYES',
+    PurchaseItem:  'tYES',
+    ItemsGroupCode: 125,
+    TaxCodeAR:     'I1',
     ...(item.unitPrice != null && { SalesPrice: item.unitPrice }),
   };
 
