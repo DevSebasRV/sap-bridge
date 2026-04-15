@@ -3,24 +3,7 @@ const router  = express.Router();
 const { sapGet, sapPost } = require('../lib/sapClient');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Buscar cliente en SAP por email
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function findCustomerByEmail(email) {
-  try {
-    const filter = `EmailAddress eq '${email}' and CardType eq 'cCustomer'`;
-    const data   = await sapGet(
-      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`
-    );
-    return data.value?.[0] || null;
-  } catch (err) {
-    console.error('[cmQuotes] Error buscando cliente:', err.response?.data || err.message);
-    return null;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Crear cliente en SAP si no existe
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Solo dígitos, exactamente 10 — si no cumple devuelve null
@@ -30,36 +13,79 @@ function sanitizePhone(raw) {
   return digits.length === 10 ? digits : null;
 }
 
+// Devuelve el Régimen Fiscal correcto:
+// 1) Lo que viene en cm.regimen
+// 2) Si RFC es XAXX010101000 → 616 (Público en General)
+// 3) Default → 601 (General de Ley Personas Morales)
+function resolveRegimen(cm) {
+  if (cm.regimen) return String(cm.regimen);
+  const rfc = (cm.rfc || '').toUpperCase().trim();
+  if (rfc === 'XAXX010101000') return '616';
+  return '601';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Búsqueda de cliente — primero por RFC, luego por móvil
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function findCustomerByRFC(rfc) {
+  if (!rfc) return null;
+  try {
+    const filter = `FederalTaxID eq '${rfc}' and CardType eq 'cCustomer'`;
+    const data   = await sapGet(
+      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`
+    );
+    return data.value?.[0] || null;
+  } catch (err) {
+    console.error('[cmQuotes] Error buscando por RFC:', err.response?.data || err.message);
+    return null;
+  }
+}
+
+async function findCustomerByMobile(mobile) {
+  const phone = sanitizePhone(mobile);
+  if (!phone) return null;
+  try {
+    const filter = `Cellular eq '${phone}' and CardType eq 'cCustomer'`;
+    const data   = await sapGet(
+      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`
+    );
+    return data.value?.[0] || null;
+  } catch (err) {
+    console.error('[cmQuotes] Error buscando por móvil:', err.response?.data || err.message);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Crear cliente en SAP
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function createCustomer(cm) {
-  // CardCode: "CM-" + primeros 8 chars del customerId de ClearMechanic
   const cardCode = 'CM-' + (cm.customerId || Date.now().toString()).substring(0, 8).toUpperCase();
   const cardName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim() || 'Sin Nombre';
-
-  // RFC: 1) campo directo, 2) campos personalizables, 3) genérico Público en General
-  const rfcField = (cm.orderCustomizableFields || []).find(
-    f => f.name?.toLowerCase().includes('rfc')
-  );
-  const rfc   = cm.rfc || rfcField?.value || 'XAXX010101000';
-  const phone = sanitizePhone(cm.mobile || cm.phoneNumber);
+  const rfc      = cm.rfc || 'XAXX010101000';
+  const regimen  = resolveRegimen(cm);
+  const phone    = sanitizePhone(cm.mobile || cm.phoneNumber);
 
   const body = {
     CardCode:                cardCode,
     CardName:                cardName,
     CardType:                'cCustomer',
-    EmailAddress:            cm.email || '',
+    EmailAddress:            cm.email        || '',
     FederalTaxID:            rfc,
-    U_RegimenFiscalReceptor: '616',
-    U_CVM_REGFISCAL:         '616',
+    U_CVM_REGFISCAL:         regimen,
+    U_RegimenFiscalReceptor: regimen,
     ...(phone && { Cellular: phone }),
   };
 
   await sapPost('/BusinessPartners', body);
-  console.log(`[cmQuotes] Cliente creado en SAP: ${cardCode} - ${cardName}`);
-  return cardCode;
+  console.log(`[cmQuotes] Cliente creado: ${cardCode} - ${cardName} (RFC: ${rfc}, Régimen: ${regimen})`);
+  return { cardCode, cardName, created: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Construir líneas de la Oferta de Venta (texto libre, sin ItemCode)
+// Líneas de la Oferta de Venta
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_ITEM_CODE = process.env.SAP_DEFAULT_ITEM || '.0114';
@@ -68,10 +94,9 @@ function buildLines(items = []) {
   return items
     .filter(i => i.itemName)
     .map(i => ({
-      ItemCode:        i.itemId || DEFAULT_ITEM_CODE,
-      ItemDescription: i.itemName,
-      Quantity:        i.quantity  || 1,
-      UnitPrice:       i.unitPrice || 0,
+      ItemCode:  i.itemId || DEFAULT_ITEM_CODE,
+      Quantity:  i.quantity  || 1,
+      UnitPrice: i.unitPrice || 0,
     }));
 }
 
@@ -97,68 +122,89 @@ async function createQuotation(cardCode, cm) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /cm-quotes
-// Recibe webhook de ClearMechanic y crea Oferta de Venta en SAP B1
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.post('/', async (req, res) => {
-  const cm = req.body;
+  const cm   = req.body;
+  const logs = [];
 
   if (!cm.orderNumber) {
     return res.status(400).json({
       success: false,
       message: 'El campo orderNumber es requerido.',
       data:    [],
+      logs:    [],
     });
   }
 
-  let step     = 'buscar cliente';
-  let cardCode = null;
+  let step         = 'buscar cliente';
+  let cardCode     = null;
+  let customerName = null;
 
   try {
 
     // 1. Si viene cardCode en el payload, usarlo directo
     if (cm.cardCode) {
       cardCode = cm.cardCode;
-      console.log(`[cmQuotes] Usando CardCode del payload: ${cardCode}`);
+      logs.push(`CardCode recibido en payload: ${cardCode}`);
     }
 
-    // 2. Buscar cliente por email
-    if (!cardCode && cm.email) {
-      const existing = await findCustomerByEmail(cm.email);
-      if (existing) {
-        cardCode = existing.CardCode;
-        console.log(`[cmQuotes] Cliente encontrado en SAP: ${cardCode}`);
+    // 2. Buscar por RFC
+    if (!cardCode && cm.rfc) {
+      const found = await findCustomerByRFC(cm.rfc);
+      if (found) {
+        cardCode     = found.CardCode;
+        customerName = found.CardName;
+        logs.push(`Cliente encontrado por RFC (${cm.rfc}): ${cardCode} - ${customerName}`);
       }
     }
 
-    // 3. Si no existe, crear cliente
-    if (!cardCode) {
-      step     = 'crear cliente';
-      cardCode = await createCustomer(cm);
+    // 3. Buscar por móvil
+    if (!cardCode && (cm.mobile || cm.phoneNumber)) {
+      const found = await findCustomerByMobile(cm.mobile || cm.phoneNumber);
+      if (found) {
+        cardCode     = found.CardCode;
+        customerName = found.CardName;
+        logs.push(`Cliente encontrado por móvil: ${cardCode} - ${customerName}`);
+      }
     }
 
-    // 3. Crear Oferta de Venta
+    // 4. Crear cliente si no existe
+    if (!cardCode) {
+      step = 'crear cliente';
+      const result = await createCustomer(cm);
+      cardCode     = result.cardCode;
+      customerName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim();
+      logs.push(`Cliente nuevo creado en SAP: ${cardCode} - ${customerName} (RFC: ${cm.rfc || 'XAXX010101000'}, Régimen: ${resolveRegimen(cm)})`);
+    }
+
+    // 5. Crear Oferta de Venta
     step = 'crear cotizacion';
     const quotation = await createQuotation(cardCode, cm);
+    logs.push(`Oferta de Venta creada: DocNum ${quotation.DocNum} para cliente ${cardCode}`);
 
     return res.status(201).json({
       success: true,
       message: null,
+      logs,
       data: {
-        quoteId:     String(quotation.DocNum),
-        orderNumber: String(cm.orderNumber),
-        customerId:  cardCode,
-        date:        cm.date || null,
+        quoteId:      String(quotation.DocNum),
+        orderNumber:  String(cm.orderNumber),
+        customerId:   cardCode,
+        customerName: customerName || '',
+        date:         cm.date || null,
       },
     });
 
   } catch (err) {
     const sapError = err.response?.data?.error?.message?.value || err.message;
     console.error(`[cmQuotes] Error en paso "${step}":`, err.response?.data || err.message);
+    logs.push(`Error en paso "${step}": ${sapError}`);
     return res.status(500).json({
       success: false,
       message: `Error en paso "${step}": ${sapError}`,
-      data:    [],
+      logs,
+      data: [],
     });
   }
 });
