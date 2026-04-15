@@ -163,6 +163,7 @@ async function resolveLines(items = [], logs = []) {
         ItemCode:  item.itemId,
         Quantity:  item.quantity  || 1,
         UnitPrice: item.unitPrice || 0,
+        ...(item.service && { U_CM_Servicio: item.service }),
       });
     } else {
       // Artículo no existe — validar campos mínimos para crearlo
@@ -179,6 +180,7 @@ async function resolveLines(items = [], logs = []) {
         ItemCode:  item.itemId,
         Quantity:  item.quantity  || 1,
         UnitPrice: item.unitPrice || 0,
+        ...(item.service && { U_CM_Servicio: item.service }),
       });
     }
   }

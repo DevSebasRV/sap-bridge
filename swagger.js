@@ -80,8 +80,8 @@ const spec = {
                     year:        2024,
                     vin:         'TEST00000000000099',
                     items: [
-                      { itemId: 'ITEM-NUEVO-001', itemName: 'Balata Delantera Test', quantity: 1, unitPrice: 350.00 },
-                      { itemId: 'ITEM-NUEVO-002', itemName: 'Aceite Motor Test',     quantity: 2, unitPrice: 120.00 },
+                      { itemId: 'ITEM-NUEVO-001', itemName: 'Balata Delantera Test', quantity: 1, unitPrice: 350.00, service: 'Frenos' },
+                      { itemId: 'ITEM-NUEVO-002', itemName: 'Aceite Motor Test',     quantity: 2, unitPrice: 120.00, service: 'Motor' },
                     ],
                   },
                 },
@@ -142,8 +142,8 @@ const spec = {
                     year:        2022,
                     vin:         'QWERTY123456ABCDE',
                     items: [
-                      { itemId: 'XYZ987', itemName: 'Balata delantera derecha', quantity: 1, unitPrice: 800 },
-                      { itemId: 'ABC029', itemName: 'Cremallera',               quantity: 2, unitPrice: 14.59 },
+                      { itemId: 'XYZ987', itemName: 'Balata delantera derecha', quantity: 1, unitPrice: 800,   service: 'Frenos' },
+                      { itemId: 'ABC029', itemName: 'Cremallera',               quantity: 2, unitPrice: 14.59, service: '4x4 traccion' },
                       { itemId: null,     itemName: 'Revisión de cremallera',   quantity: null, unitPrice: null },
                     ],
                     orderCustomizableFields: [
@@ -276,6 +276,7 @@ const spec = {
           itemName:  { type: 'string',  description: 'Nombre/descripción del artículo — requerido para crear si no existe', example: 'Balata Delantera' },
           quantity:  { type: 'number',  description: 'Cantidad', example: 1 },
           unitPrice: { type: 'number',  description: 'Precio unitario', example: 350.00 },
+          service:   { type: 'string',  description: 'Servicio o grupo de ClearMechanic — se guarda en U_CM_Servicio a nivel de fila', example: '4x4 traccion' },
         },
       },
 
