@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const axios   = require('axios');
 
-const { getSession, cachedSession, agent, SAP_CONFIG } = require('./lib/sapClient');
+const { getSession, sessions, agent, SAP_CONFIG } = require('./lib/sapClient');
 const setupSwagger = require('./swagger');
 
 const app = express();
@@ -23,8 +23,11 @@ app.use('/s-layer', async (req, res, next) => {
   // Si es la ruta de docs, pasar al siguiente middleware
   if (req.path.startsWith('/api-docs')) return next();
 
+  // BD seleccionada por header X-SAP-DB (ej: "cp" o "fn"), default según .env
+  const dbKey = req.headers['x-sap-db'] || undefined;
+
   try {
-    const session = await getSession();
+    const session = await getSession(dbKey);
     const url     = SAP_CONFIG.url + req.url;
 
     const response = await axios({
@@ -42,7 +45,10 @@ app.use('/s-layer', async (req, res, next) => {
     res.status(response.status).json(response.data);
 
   } catch (err) {
-    if (err.response?.status === 401) cachedSession.id = null;
+    const dbKeyResolved = dbKey || SAP_CONFIG.defaultDb;
+    if (err.response?.status === 401 && sessions[dbKeyResolved]) {
+      sessions[dbKeyResolved].id = null;
+    }
     res.status(err.response?.status || 500).json(err.response?.data || { error: err.message });
   }
 });

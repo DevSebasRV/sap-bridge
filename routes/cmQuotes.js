@@ -42,12 +42,13 @@ function missingCustomerFields(cm) {
 // Clientes — búsqueda y creación
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function findCustomerByRFC(rfc) {
+async function findCustomerByRFC(rfc, dbKey) {
   if (!rfc) return null;
   try {
     const filter = `FederalTaxID eq '${rfc}' and CardType eq 'cCustomer'`;
     const data   = await sapGet(
-      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`
+      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`,
+      {}, dbKey
     );
     return data.value?.[0] || null;
   } catch (err) {
@@ -56,13 +57,14 @@ async function findCustomerByRFC(rfc) {
   }
 }
 
-async function findCustomerByMobile(mobile) {
+async function findCustomerByMobile(mobile, dbKey) {
   const phone = sanitizePhone(mobile);
   if (!phone) return null;
   try {
     const filter = `Cellular eq '${phone}' and CardType eq 'cCustomer'`;
     const data   = await sapGet(
-      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`
+      `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`,
+      {}, dbKey
     );
     return data.value?.[0] || null;
   } catch (err) {
@@ -71,7 +73,7 @@ async function findCustomerByMobile(mobile) {
   }
 }
 
-async function createCustomer(cm) {
+async function createCustomer(cm, dbKey) {
   const rfc      = extractRFC(cm);
   const regimen  = extractRegimen(cm);
   const cardName = [cm.firstName, cm.lastName].filter(Boolean).join(' ').trim();
@@ -89,7 +91,7 @@ async function createCustomer(cm) {
     ...(phone    && { Cellular: phone }),
   };
 
-  await sapPost('/BusinessPartners', body);
+  await sapPost('/BusinessPartners', body, dbKey);
   return { cardCode, cardName };
 }
 
@@ -97,10 +99,11 @@ async function createCustomer(cm) {
 // Artículos — búsqueda y creación
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function itemExists(itemCode) {
+async function itemExists(itemCode, dbKey) {
   try {
     const data = await sapGet(
-      `/Items('${encodeURIComponent(itemCode)}')?$select=ItemCode,ItemName`
+      `/Items('${encodeURIComponent(itemCode)}')?$select=ItemCode,ItemName`,
+      {}, dbKey
     );
     return data?.ItemCode ? data : null;
   } catch (err) {
@@ -111,7 +114,7 @@ async function itemExists(itemCode) {
   }
 }
 
-async function createItem(item) {
+async function createItem(item, dbKey) {
   const body = {
     ItemCode:       item.itemId,
     ItemName:       item.itemName,
@@ -122,7 +125,7 @@ async function createItem(item) {
     ItemsGroupCode: 125,
   };
 
-  await sapPost('/Items', body);
+  await sapPost('/Items', body, dbKey);
   return item.itemId;
 }
 
@@ -138,7 +141,7 @@ function missingItemFields(item) {
 // Verifica/crea artículos y construye las líneas
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function resolveLines(items = [], logs = []) {
+async function resolveLines(items = [], logs = [], dbKey) {
   const lines = [];
 
   for (const item of items) {
@@ -154,7 +157,7 @@ async function resolveLines(items = [], logs = []) {
     }
 
     // Verificar si el artículo ya existe en SAP
-    const existing = await itemExists(item.itemId);
+    const existing = await itemExists(item.itemId, dbKey);
 
     if (existing) {
       // Artículo existe — NO mandamos descripción, SAP usa la original
@@ -174,7 +177,7 @@ async function resolveLines(items = [], logs = []) {
       }
 
       // Crear artículo
-      await createItem(item);
+      await createItem(item, dbKey);
       logs.push(`Artículo nuevo creado en SAP: ${item.itemId} - ${item.itemName} (Grupo: 125 - TALLER SERVICIO, IVA: I1)`);
       lines.push({
         ItemCode:  item.itemId,
@@ -192,7 +195,7 @@ async function resolveLines(items = [], logs = []) {
 // Crear Oferta de Venta en SAP
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function createQuotation(cardCode, cm, lines) {
+async function createQuotation(cardCode, cm, lines, dbKey) {
   const vehicleInfo = [cm.brand, cm.model, cm.year, cm.vin]
     .filter(Boolean)
     .join(' - ');
@@ -205,7 +208,7 @@ async function createQuotation(cardCode, cm, lines) {
     DocumentLines: lines,
   };
 
-  return await sapPost('/Quotations', body);
+  return await sapPost('/Quotations', body, dbKey);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,8 +216,9 @@ async function createQuotation(cardCode, cm, lines) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.post('/', async (req, res) => {
-  const cm   = req.body;
-  const logs = [];
+  const cm    = req.body;
+  const dbKey = req.headers['x-sap-db'] || undefined;  // "cp" | "fn" | undefined (usa default del .env)
+  const logs  = [];
 
   if (!cm.orderNumber) {
     return res.status(400).json({
@@ -250,7 +254,7 @@ router.post('/', async (req, res) => {
     if (!cardCode) {
       const rfc = extractRFC(cm);
       if (rfc) {
-        const found = await findCustomerByRFC(rfc);
+        const found = await findCustomerByRFC(rfc, dbKey);
         if (found) {
           cardCode     = found.CardCode;
           customerName = found.CardName;
@@ -267,7 +271,7 @@ router.post('/', async (req, res) => {
     if (!cardCode) {
       const mobile = cm.mobile || cm.phoneNumber;
       if (mobile) {
-        const found = await findCustomerByMobile(mobile);
+        const found = await findCustomerByMobile(mobile, dbKey);
         if (found) {
           cardCode     = found.CardCode;
           customerName = found.CardName;
@@ -291,7 +295,7 @@ router.post('/', async (req, res) => {
         });
       }
       step = 'crear cliente';
-      const result = await createCustomer(cm);
+      const result = await createCustomer(cm, dbKey);
       cardCode     = result.cardCode;
       customerName = result.cardName;
       logs.push(`Cliente nuevo creado en SAP: ${cardCode} - ${customerName} (RFC: ${extractRFC(cm)}, Régimen: ${extractRegimen(cm)})`);
@@ -300,7 +304,7 @@ router.post('/', async (req, res) => {
     // ── ARTÍCULOS ─────────────────────────────────────────────────────────────
 
     step = 'resolver articulos';
-    const lines = await resolveLines(cm.items, logs);
+    const lines = await resolveLines(cm.items, logs, dbKey);
 
     if (lines.length === 0) {
       return res.status(400).json({
@@ -313,7 +317,7 @@ router.post('/', async (req, res) => {
     // ── COTIZACIÓN ────────────────────────────────────────────────────────────
 
     step = 'crear cotizacion';
-    const quotation = await createQuotation(cardCode, cm, lines);
+    const quotation = await createQuotation(cardCode, cm, lines, dbKey);
     logs.push(`Oferta de Venta creada: DocNum ${quotation.DocNum} — Cliente: ${cardCode} — ${lines.length} línea(s)`);
 
     return res.status(201).json({
