@@ -12,9 +12,10 @@ const spec = {
     { url: 'http://localhost:3000',            description: 'Local' },
   ],
   tags: [
-    { name: 'Health',     description: 'Estado del servicio' },
-    { name: 'CM Quotes',  description: 'Crear Ofertas de Venta en SAP desde ClearMechanic' },
-    { name: 'SAP Proxy',  description: 'Proxy directo al SAP Service Layer' },
+    { name: 'Health',        description: 'Estado del servicio' },
+    { name: 'CM Customers',  description: 'Crear/buscar clientes en SAP desde ClearMechanic' },
+    { name: 'CM Quotes',     description: 'Crear Ofertas de Venta en SAP desde ClearMechanic' },
+    { name: 'SAP Proxy',     description: 'Proxy directo al SAP Service Layer' },
   ],
   paths: {
 
@@ -28,6 +29,106 @@ const spec = {
             description: 'Servicio activo',
             content: { 'application/json': {
               example: { status: 'ok', service: 'sap-bridge' }
+            }},
+          },
+        },
+      },
+    },
+
+    // ── CM Customers ─────────────────────────────────────────────────────────
+    '/cm-customers': {
+      post: {
+        tags:    ['CM Customers'],
+        summary: 'Crear cliente en SAP B1 desde ClearMechanic',
+        description: `
+**Flujo:**
+1. Si viene \`taxId\` (RFC) → busca cliente en SAP por RFC
+2. Si viene \`mobile\` → busca por teléfono móvil
+3. Si no existe → crea el Business Partner en SAP
+
+Si el cliente ya existe, devuelve sus datos sin crear uno nuevo.
+
+**Header opcional:** \`X-SAP-DB: cp | fn | test\`
+        `,
+        parameters: [
+          {
+            name: 'X-SAP-DB', in: 'header', required: false,
+            schema: { type: 'string', enum: ['cp', 'fn', 'test'] },
+            description: 'Base de datos SAP destino. Default: cp',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CMCustomerRequest' },
+              examples: {
+                'Cliente persona física': {
+                  summary: 'Persona física con RFC',
+                  value: {
+                    firstName:    'Teresa de Jesús',
+                    lastName:     'Shen',
+                    email:        'teresa.shen@clearcheck.us',
+                    mobile:       '9988117515',
+                    taxId:        'TEJU850403PSS',
+                    landline:     '9912345678',
+                    businessName: 'Teresa de Jesús Shen',
+                    regimen:      '601',
+                  },
+                },
+                'Cliente solo móvil': {
+                  summary: 'Sin RFC — solo móvil',
+                  value: {
+                    firstName: 'Carlos',
+                    lastName:  'López',
+                    mobile:    '5512345678',
+                    email:     'carlos@test.com',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Cliente creado correctamente en SAP',
+            content: { 'application/json': {
+              example: {
+                success:  true,
+                message:  'Final customer created successfully.',
+                data: {
+                  customerId:   'CM-TEJU850403P',
+                  firstName:    'Teresa de Jesús',
+                  lastName:     'Shen',
+                  email:        'teresa.shen@clearcheck.us',
+                  mobile:       '9988117515',
+                  taxId:        'TEJU850403PSS',
+                  landline:     '9912345678',
+                  businessName: 'Teresa de Jesús Shen',
+                },
+              },
+            }},
+          },
+          200: {
+            description: 'Cliente ya existe en SAP — se devuelven sus datos',
+            content: { 'application/json': {
+              example: {
+                success: true,
+                message: 'Cliente ya existe en SAP.',
+                data: { customerId: 'CM-TEJU850403P', firstName: 'Teresa de Jesús', lastName: 'Shen' },
+              },
+            }},
+          },
+          400: {
+            description: 'Faltan datos requeridos',
+            content: { 'application/json': {
+              example: { success: false, message: 'Se requiere taxId (RFC) o mobile (10 dígitos).', data: [] },
+            }},
+          },
+          500: {
+            description: 'Error de SAP',
+            content: { 'application/json': {
+              example: { success: false, message: 'RFC must be 12 or 13 characters long', data: [] },
             }},
           },
         },
@@ -237,6 +338,20 @@ const spec = {
   // ── Schemas ────────────────────────────────────────────────────────────────
   components: {
     schemas: {
+
+      CMCustomerRequest: {
+        type: 'object',
+        properties: {
+          firstName:    { type: 'string',  description: 'Nombre del cliente', example: 'Teresa de Jesús' },
+          lastName:     { type: 'string',  description: 'Apellido del cliente', example: 'Shen' },
+          email:        { type: 'string',  description: 'Correo electrónico', example: 'teresa.shen@clearcheck.us' },
+          mobile:       { type: 'string',  description: 'Teléfono móvil (10 dígitos)', example: '9988117515' },
+          taxId:        { type: 'string',  description: 'RFC del cliente (12-13 chars)', example: 'TEJU850403PSS' },
+          landline:     { type: 'string',  description: 'Teléfono fijo', example: '9912345678' },
+          businessName: { type: 'string',  description: 'Razón social — tiene prioridad sobre firstName+lastName como CardName', example: 'Teresa de Jesús Shen' },
+          regimen:      { type: 'string',  description: 'Régimen Fiscal SAP México (opcional). Ej: 601, 616', example: '601' },
+        },
+      },
 
       CMQuoteRequest: {
         type: 'object',

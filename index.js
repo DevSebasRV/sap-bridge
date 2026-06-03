@@ -57,7 +57,8 @@ app.use('/s-layer', async (req, res, next) => {
 // Webhook ClearMechanic → Oferta de Venta SAP B1
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.use('/cm-quotes', require('./routes/cmQuotes'));
+app.use('/cm-quotes',    require('./routes/cmQuotes'));
+app.use('/cm-customers', require('./routes/cmCustomers'));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Health check
