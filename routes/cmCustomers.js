@@ -1,6 +1,6 @@
 const express = require('express');
 const router  = express.Router();
-const { sapGet, sapPost } = require('../lib/sapClient');
+const { sapGet, sapPost, odataEscape } = require('../lib/sapClient');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -15,7 +15,7 @@ function sanitizePhone(raw) {
 async function findByRFC(rfc, dbKey) {
   if (!rfc) return null;
   try {
-    const filter = `FederalTaxID eq '${rfc}' and CardType eq 'cCustomer'`;
+    const filter = `FederalTaxID eq '${odataEscape(rfc)}' and CardType eq 'cCustomer'`;
     const data   = await sapGet(
       `/BusinessPartners?$filter=${encodeURIComponent(filter)}&$select=CardCode,CardName&$top=1`,
       {}, dbKey

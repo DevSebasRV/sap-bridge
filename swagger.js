@@ -159,6 +159,11 @@ Si el cliente ya existe, devuelve sus datos sin crear uno nuevo.
 
 **RFC y Régimen Fiscal** también pueden venir en \`orderCustomizableFields\` con nombres que contengan "rfc" y "regimen".
         `,
+        parameters: [
+          { name: 'X-SAP-DB', in: 'header', required: false,
+            schema: { type: 'string', enum: ['cp', 'fn', 'test'] },
+            description: 'Empresa SAP destino (default: la del .env)' },
+        ],
         requestBody: {
           required: true,
           content: {
@@ -325,6 +330,18 @@ Si el cliente ya existe, devuelve sus datos sin crear uno nuevo.
         description: 'Envía cualquier body directamente al Service Layer. Ejemplo: `/s-layer/Quotations`',
         parameters: [
           { name: 'path', in: 'path', required: true, schema: { type: 'string' }, example: 'Quotations' },
+        ],
+        requestBody: {
+          content: { 'application/json': { schema: { type: 'object' } } },
+        },
+        responses: { 200: { description: 'Respuesta del SAP Service Layer' } },
+      },
+      patch: {
+        tags:    ['SAP Proxy'],
+        summary: 'PATCH directo al SAP Service Layer',
+        description: 'Actualiza un documento existente. Ejemplo: `/s-layer/Quotations(123)` o `/s-layer/BusinessPartners(\'C00001\')`. El proxy acepta cualquier método HTTP.',
+        parameters: [
+          { name: 'path', in: 'path', required: true, schema: { type: 'string' }, example: 'Quotations(123)' },
         ],
         requestBody: {
           content: { 'application/json': { schema: { type: 'object' } } },
