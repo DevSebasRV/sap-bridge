@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const axios   = require('axios');
 
-const { getSession, sessions, agent, SAP_CONFIG, REQUEST_TIMEOUT_MS } = require('./lib/sapClient');
+const { agent, SAP_CONFIG, REQUEST_TIMEOUT_MS, conRecuperacion, cookieHeader } = require('./lib/sapClient');
 const setupSwagger = require('./swagger');
 
 const app = express();
@@ -28,33 +28,20 @@ app.use('/s-layer', async (req, res, next) => {
 
   // req.url YA incluye el query string — no pasar `params` aparte o los
   // parámetros OData ($top, $filter…) llegan duplicados a SAP.
-  const doRequest = async () => {
-    const session = await getSession(dbKey);
-    return axios({
+  // `conRecuperacion` reintenta solo el -1102 (switch company, con pausas) y
+  // la sesión vencida (re-login) — los errores de negocio pasan tal cual.
+  try {
+    const response = await conRecuperacion(dbKey, (session) => axios({
       method:     req.method,
       url:        SAP_CONFIG.url + req.url,
       data:       req.body,
       headers: {
-        'Cookie':       `B1SESSION=${session.id}; ${session.route}`,
+        'Cookie':       cookieHeader(session),
         'Content-Type': 'application/json',
       },
       httpsAgent: agent,
       timeout:    REQUEST_TIMEOUT_MS,
-    });
-  };
-
-  try {
-    let response;
-    try {
-      response = await doRequest();
-    } catch (err) {
-      // Sesión expirada: re-login y reintento único (antes el error 401
-      // llegaba al cliente y solo la SIGUIENTE petición se recuperaba).
-      if (err.response?.status !== 401) throw err;
-      const key = dbKey || SAP_CONFIG.defaultDb;
-      if (sessions[key]) sessions[key].id = null;
-      response = await doRequest();
-    }
+    }));
     res.status(response.status).json(response.data);
   } catch (err) {
     res.status(err.response?.status || 500).json(err.response?.data || { error: err.message });
